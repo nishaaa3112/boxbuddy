@@ -1,0 +1,191 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  OPERATIONS_MANAGER
+  STAFF
+}
+
+enum ShipmentStatus {
+  PENDING
+  IN_TRANSIT
+  CUSTOMS
+  DELIVERED
+  CANCELLED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum DocumentType {
+  INVOICE
+  PACKING_LIST
+  BILL_OF_LADING
+  CERTIFICATE
+  OTHER
+}
+
+enum TimelineEventType {
+  CREATED
+  PICKED_UP
+  IN_TRANSIT
+  CUSTOMS_CLEARANCE
+  OUT_FOR_DELIVERY
+  DELIVERED
+  EXCEPTION
+}
+
+// ─────────────────────────────────────────────
+// Core Models
+// ─────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  role      UserRole @default(STAFF)
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shipments   Shipment[]   @relation("CreatedByUser")
+  documents   Document[]
+  activities  Activity[]
+  riskReports RiskReport[]
+
+  @@map("users")
+}
+
+model Shipment {
+  id              String         @id @default(uuid())
+  shipmentCode    String         @unique
+  clientName      String
+  originCountry   String
+  destCountry     String
+  carrier         String
+  containerNumber String?
+  etd             DateTime
+  eta             DateTime
+  status          ShipmentStatus @default(PENDING)
+  description     String?
+  weight          Float?
+  volume          Float?
+  value           Float?
+  currency        String         @default("USD")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  createdById String
+  createdBy   User   @relation("CreatedByUser", fields: [createdById], references: [id])
+
+  documents      Document[]
+  timelineEvents TimelineEvent[]
+  riskReports    RiskReport[]
+  activities     Activity[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([eta])
+  @@map("shipments")
+}
+
+model Document {
+  id          String       @id @default(uuid())
+  name        String
+  type        DocumentType
+  fileUrl     String
+  filePath    String
+  fileSize    Int
+  mimeType    String
+  version     Int          @default(1)
+  isLatest    Boolean      @default(true)
+  description String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  parentId String?
+  parent   Document?  @relation("DocumentVersions", fields: [parentId], references: [id])
+  versions Document[] @relation("DocumentVersions")
+
+  @@index([shipmentId])
+  @@index([type])
+  @@map("documents")
+}
+
+model TimelineEvent {
+  id          String            @id @default(uuid())
+  eventType   TimelineEventType
+  title       String
+  description String?
+  location    String?
+  occurredAt  DateTime
+  createdAt   DateTime          @default(now())
+
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@map("timeline_events")
+}
+
+model RiskReport {
+  id               String    @id @default(uuid())
+  riskLevel        RiskLevel
+  riskScore        Int
+  delayProbability Float
+  customsRisk      Float
+  missingDocuments String[]
+  suggestions      String[]
+  rawAnalysis      Json?
+  generatedAt      DateTime  @default(now())
+
+  shipmentId String
+  shipment   Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  generatedById String?
+  generatedBy   User?   @relation(fields: [generatedById], references: [id])
+
+  @@index([shipmentId])
+  @@map("risk_reports")
+}
+
+model Activity {
+  id          String   @id @default(uuid())
+  action      String
+  entityType  String
+  entityId    String
+  description String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  shipmentId String?
+  shipment   Shipment? @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@map("activities")
+}
